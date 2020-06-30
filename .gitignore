@@ -1,0 +1,6 @@
+*.img
+.*.swp
+qemu/*.qcow2
+qemu/*.img
+qemu/*.sqfs
+qemu/media

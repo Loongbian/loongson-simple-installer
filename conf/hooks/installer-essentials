@@ -1,0 +1,47 @@
+#!/bin/sh
+
+PREREQ=""
+prereqs()
+{
+    echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+    prereqs
+    exit 0
+    ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+check_file_or_fail()
+{
+  if [ ! -f $1 ]; then
+    echo "Error: Could not find file $1."
+    exit 1
+  fi
+}
+
+EXEC_DEPS="/usr/bin/whiptail /usr/bin/unsquashfs /usr/sbin/parted /usr/bin/lsblk /usr/sbin/dmidecode /usr/sbin/mkfs.fat /usr/sbin/mkfs.ext4"
+
+for exec in $EXEC_DEPS; do
+  check_file_or_fail "$exec"
+  copy_exec "$exec" $(dirname "$exec")
+done
+
+FILE_DEPS="/usr/share/initramfs-tools/installer/main"
+
+mkdir "$DESTDIR/installer"
+for file in $FILE_DEPS; do
+  check_file_or_fail "$file"
+  cp -f "$file" "$DESTDIR/installer"
+done
+
+manual_add_modules vfat nls_cp437 nls_ascii
+
+ISATTY_LIB_TARGET=$(mktemp)
+echo "int isatty(int fd) { return 1; }" | gcc -O2 -fpic -shared -ldl -o "$ISATTY_LIB_TARGET" -xc - && copy_exec "$ISATTY_LIB_TARGET" /usr/lib/isatty.so
+rm -f "$ISATTY_LIB_TARGET"
+
+exit 0

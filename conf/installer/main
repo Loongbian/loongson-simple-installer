@@ -1,0 +1,239 @@
+#!/bin/sh
+
+WT_HEIGHT=20
+WT_HEIGHT_SM=10
+WT_WIDTH=60
+WT_MENU_HEIGHT=10
+
+SOURCE_DIR=/source
+SOURCE_IMAGE_FILE="$SOURCE_DIR/filesystem.sqfs"
+SOURCE_IMAGE_MD5SUM_FILE="$SOURCE_DIR/filesystem.md5sum"
+TARGET_DIR=/target
+LOG_FILE=/run/installer.log
+WT_TITLE="Loongson Pi Edu Installer v0.1"
+
+USER_NAME=loongson
+USER_PASS_HASHED="0~$1$Tjbll1jV$IAGIzeIy1emboLIyNXTpl11~" # loongson
+
+set -o pipefail
+
+logged() {
+  $@ >> $LOG_FILE 2>>$LOG_FILE
+}
+
+log() {
+  echo $@ >> $LOG_FILE
+}
+
+wt_info() {
+  log "$@"
+  whiptail --infobox "$@" $WT_HEIGHT_SM $WT_WIDTH
+}
+
+wt_msg_info() {
+  log "$@"
+  whiptail --msgbox "$@" $WT_HEIGHT_SM $WT_WIDTH
+}
+
+wt_msg_error() {
+  wt_msg_info "Error: $@"
+}
+
+wt_gauge_update_status() {
+  log "$2"
+  echo -e "XXX\n$1\n$2\nXXX"
+}
+
+SOURCE_DISK=
+TARGET_DISK=
+
+detect_and_mount_installation_media() {
+  mkdir -p "$SOURCE_DIR"
+  mkdir -p "$TARGET_DIR"
+  wt_info "Detecting installation media..."
+  CANDIDATES=$(lsblk -prno NAME,FSTYPE,MOUNTPOINT | awk -F '\ ' '$2=="vfat" && $3=="" {print $1}')
+  log "Available disks:"
+  log "$CANDIDATES"
+  for disk in $CANDIDATES; do
+    log "Trying to mount $disk..."
+    mount -t vfat -o ro $disk $SOURCE_DIR
+    if [ ! $? -eq 0 ]; then
+      continue
+    fi
+    log "Mounted. Looking for squashfs image and its md5sum..."
+    if [ ! -f "$SOURCE_IMAGE_FILE" ] || [ ! -f "$SOURCE_IMAGE_MD5SUM_FILE" ] ; then
+      umount $disk
+      continue
+    fi
+    log "Image found. $disk is a valid installation media."
+    SOURCE_DISK=$disk
+    return 0
+  done
+  wt_msg_error "No valid installaion media available. Please check your USB disk."
+  return 1
+}
+
+verify_image() {
+  wt_info "Checking integrity of the installation image..."
+  MD5SUM=$(cd $(dirname "$SOURCE_IMAGE_FILE") && md5sum $(basename "$SOURCE_IMAGE_FILE"))
+  if ! echo "$MD5SUM" | diff "$SOURCE_IMAGE_MD5SUM_FILE" - ; then
+    wt_msg_error "Invalid checksum. Expected $(cat $SOURCE_IMAGE_MD5SUM_FILE), but got $MD5SUM"
+    return 1
+  fi
+  log "Integrity check passed."
+  return 0
+}
+
+choose_target() {
+  while true; do
+    AWK_PROG='!index("'$SOURCE_DISK'", $1) && $4=="disk" && $5=="0" { ORS=" "; print $1 " " $2 "_[" $3 "] OFF" }'
+    CANDIDATES="$(lsblk -prndo NAME,SIZE,MODEL,TYPE,RM | awk -F '\ ' "$AWK_PROG")"
+    TARGET_DISK=$(whiptail --radiolist "Where should we install Loongson OS? Press Space to select and Enter to confirm." $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT $CANDIDATES 3>&1 1>&2 2>&3)
+    if [ ! $? -eq 0 ] || [ "$TARGET_DISK" = "" ]; then
+      continue
+    fi
+
+    log "Chosen target disk: $TARGET_DISK"
+    whiptail --yesno "ALL DATA WILL BE DESTORYED ON $TARGET_DISK, CONTINUE?" --defaultno $WT_HEIGHT_SM $WT_WIDTH
+    if [ $? -eq 1 ]; then
+      continue
+    fi
+    return 0
+  done
+}
+
+BOOT_FS_TARGET=
+ROOTFS_TARGET=
+SWAP_TARGET=
+
+partition_and_format_target() {
+  BOOT_FS_TARGET=${TARGET_DISK}1
+  ROOTFS_TARGET=${TARGET_DISK}2
+  SWAP_TARGET=${TARGET_DISK}3
+
+  {
+    wt_gauge_update_status 20 "Partitioning $TARGET_DISK..."
+    logged parted -s -- "$TARGET_DISK" \
+      mklabel msdos \
+      mkpart primary fat32 2048s 256M \
+      mkpart primary ext4 256M -512M \
+      mkpart primary linux-swap -512M -1s || return 1
+
+    if [ ! -b "$BOOT_FS_TARGET" ] || [ ! -b "$ROOTFS_TARGET" ] || [ ! -b "$SWAP_TARGET" ]; then
+      log "Could not find the target partitions."
+      return 2
+    fi
+    wt_gauge_update_status 40 "Creating root filesystem on $ROOTFS_TARGET..."
+    logged mkfs.ext4 "$ROOTFS_TARGET"  || return 5
+    logged mount -t ext4 "$ROOTFS_TARGET" "$TARGET_DIR" || return 6
+    wt_gauge_update_status 60 "Creating boot filesystem on $BOOT_FS_TARGET..."
+    logged mkfs.fat -F32 "$BOOT_FS_TARGET" || return 3
+    mkdir -p "$TARGET_DIR/boot"
+    logged mount -t vfat "$BOOT_FS_TARGET" "$TARGET_DIR/boot" || return 4
+    wt_gauge_update_status 80 "Creating swap on $SWAP_TARGET..."
+    logged mkswap "$SWAP_TARGET" || return 7
+  } | whiptail --gauge "Partitioning..." $WT_HEIGHT_SM $WT_WIDTH 0
+  if [ ! $? -eq 0 ]; then
+    wt_msg_error "code $RET"
+    return 1
+  fi
+  return 0
+}
+
+unpack_filesystem() {
+  LD_PRELOAD="/usr/lib/isatty.so" unsquashfs -f -d "$TARGET_DIR" "$SOURCE_IMAGE_FILE" 2>>$LOG_FILE | \
+    tr '\r' '\n' | \
+    awk '$NF ~ /%$/{ print substr($NF, 1, length($NF)-1) }' | \
+    whiptail --gauge "Unpacking filesystem image to $TARGET_DISK..." $WT_HEIGHT_SM $WT_WIDTH 0
+}
+
+post_installation() {
+  wt_info "Running post-installation script..."
+  log "Adding user..."
+  logged chroot "$TARGET_DIR" useradd -m -p "$USER_PASS_HASHED" "$USER_NAME"
+  if [ ! $? -eq 0 ]; then
+    wt_msg_error "Failed to create the user account."
+    return 1
+  fi
+  log "Configuring /etc/fstab..."
+  ROOTFS_UUID=$(lsblk -no UUID "$ROOTFS_TARGET")
+  BOOT_FS_UUID=$(lsblk -no UUID "$BOOT_FS_TARGET")
+  SWAP_UUID=$(lsblk -no UUID "$SWAP_TARGET")
+  if [ "$ROOTFS_UUID" = "" ] || [ "$BOOT_FS_UUID" = "" ] || [ "$SWAP_UUID" = "" ]; then
+    wt_msg_error "Unable to determine filesystem UUIDs."
+    return 1
+  fi
+  FSTAB_FILE="$TARGET_DIR/etc/fstab"
+  echo "UUID=$ROOTFS_UUID	/ 	ext4 	errors=remount-ro 0 1" >> "$FSTAB_FILE"
+  echo "UUID=$BOOT_FS_UUID	/boot 	vfat 	defaults 0 1" >> "$FSTAB_FILE"
+  echo "UUID=$SWAP_UUID		none 	swap 	sw 0 0" >> "$FSTAB_FILE"
+}
+
+umount_all() {
+  if [ ! "$SOURCE_DISK" = "" ]; then
+    umount "$SOURCE_DIR"
+    SOURCE_DISK=
+  fi
+
+  if [ ! "$TARGET_DISK" = "" ]; then
+    umount "$TARGET_DIR"
+    umount "$TARGET_DIR/boot"
+    TARGET_DISK=
+  fi
+}
+
+do_install() {
+  trap umount_all EXIT SIGINT
+  detect_and_mount_installation_media && \
+  verify_image && \
+  choose_target && \
+  partition_and_format_target && \
+  unpack_filesystem && \
+  post_installation
+  if [ ! $? -eq 0 ]; then
+    umount_all
+    whiptail --yesno "Installation failed. View log?" --defaultno $WT_HEIGHT_SM $WT_WIDTH
+    if [ $? -eq 0 ]; then
+      whiptail --textbox --scrolltext --title "Log file" $LOG_FILE $WT_HEIGHT $WT_WIDTH
+    fi
+    return 1
+  fi
+  wt_msg_info "Installation completed successfully. Press Ok to reboot."
+  umount_all
+  do_reboot
+}
+
+do_shell() {
+  clear
+  ash
+}
+
+do_reboot() {
+  reboot -f
+}
+
+do_shutdown() {
+  poweroff -f
+}
+
+while true; do
+  FUN=$(whiptail --title "$WT_TITLE" \
+                 --menu "Welcome to Loongson Pi Edu Installer" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT \
+                 "1 Install" "Install Loongson OS to this machine" \
+                 "2 Shell" "Enter rescue shell" \
+                 "3 Reboot" "Restart this machine" \
+                 "4 Shutdown" "Power off this machine" \
+                 "5 Exit" "" \
+                 3>&1 1>&2 2>&3)
+  RET=$?
+  if [ $RET -eq 0 ]; then
+    case "$FUN" in
+      1\ *) do_install ;;
+      2\ *) do_shell ;;
+      3\ *) do_reboot ;;
+      4\ *) do_shutdown ;;
+      5\ *) exit 0 ;;
+      *) wt_msg_error "Unrecognized option" ;;
+    esac
+  fi
+done
