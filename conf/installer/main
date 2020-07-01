@@ -1,19 +1,34 @@
 #!/bin/sh
 
-WT_HEIGHT=20
-WT_HEIGHT_SM=10
-WT_WIDTH=60
-WT_MENU_HEIGHT=10
+## Simple Debian Installer
+## Copyright (C) 2020 Peter Zhang <mbyzhang@outlook.com>
+##
+## This program comes with ABSOLUTELY NO WARRANTY; for details see COPYING.
+## This is free software, and you are welcome to redistribute it
+## under certain conditions; see COPYING for details.
 
 SOURCE_DIR=/source
 SOURCE_IMAGE_FILE="$SOURCE_DIR/filesystem.sqfs"
 SOURCE_IMAGE_MD5SUM_FILE="$SOURCE_DIR/filesystem.md5sum"
 TARGET_DIR=/target
 LOG_FILE=/run/installer.log
-WT_TITLE="Loongson Pi Edu Installer v0.1"
 
 USER_NAME=loongson
-USER_PASS_HASHED="0~$1$Tjbll1jV$IAGIzeIy1emboLIyNXTpl11~" # loongson
+USER_PASS=loongson
+ROOT_PASS=loongson
+
+ROOTFS_TYPE=ext4
+ROOTFS_MK_OPTS=
+BOOT_FS_TYPE=ext3
+BOOT_FS_MK_OPTS=
+BOOT_FS_SIZE=128M
+SWAP_SIZE=512M
+
+WT_TITLE="Loongson Pi Edu Installer v0.1"
+WT_HEIGHT=20
+WT_HEIGHT_SM=10
+WT_WIDTH=60
+WT_MENU_HEIGHT=10
 
 set -o pipefail
 
@@ -84,56 +99,59 @@ verify_image() {
   return 0
 }
 
+BOOT_FS_TARGET=
+ROOTFS_TARGET=
+SWAP_TARGET=
+
 choose_target() {
   while true; do
     AWK_PROG='!index("'$SOURCE_DISK'", $1) && $4=="disk" && $5=="0" { ORS=" "; print $1 " " $2 "_[" $3 "] OFF" }'
     CANDIDATES="$(lsblk -prndo NAME,SIZE,MODEL,TYPE,RM | awk -F '\ ' "$AWK_PROG")"
-    TARGET_DISK=$(whiptail --radiolist "Where should we install Loongson OS? Press Space to select and Enter to confirm." $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT $CANDIDATES 3>&1 1>&2 2>&3)
+    TARGET_DISK=$(whiptail --radiolist "Where should we install Loongson OS? Press Space to select and Enter to confirm." --cancel-button "Rescan" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT $CANDIDATES 3>&1 1>&2 2>&3)
     if [ ! $? -eq 0 ] || [ "$TARGET_DISK" = "" ]; then
       continue
     fi
 
     log "Chosen target disk: $TARGET_DISK"
-    whiptail --yesno "ALL DATA WILL BE DESTORYED ON $TARGET_DISK, CONTINUE?" --defaultno $WT_HEIGHT_SM $WT_WIDTH
+    whiptail --yesno "ALL DATA WILL BE DESTROYED ON $TARGET_DISK, CONTINUE?" --defaultno $WT_HEIGHT_SM $WT_WIDTH
     if [ $? -eq 1 ]; then
       continue
     fi
+    BOOT_FS_TARGET=${TARGET_DISK}1
+    ROOTFS_TARGET=${TARGET_DISK}2
+    SWAP_TARGET=${TARGET_DISK}3
     return 0
   done
 }
 
-BOOT_FS_TARGET=
-ROOTFS_TARGET=
-SWAP_TARGET=
+
 
 partition_and_format_target() {
-  BOOT_FS_TARGET=${TARGET_DISK}1
-  ROOTFS_TARGET=${TARGET_DISK}2
-  SWAP_TARGET=${TARGET_DISK}3
-
   {
     wt_gauge_update_status 20 "Partitioning $TARGET_DISK..."
     logged parted -s -- "$TARGET_DISK" \
       mklabel msdos \
-      mkpart primary fat32 2048s 256M \
-      mkpart primary ext4 256M -512M \
-      mkpart primary linux-swap -512M -1s || return 1
-
+      mkpart primary 2048s "$BOOT_FS_SIZE" \
+      mkpart primary "$BOOT_FS_SIZE" "-$SWAP_SIZE" \
+      mkpart primary linux-swap "-$SWAP_SIZE" -1s || return 1
+    partprobe "$TARGET_DISK"
+    sleep 1
     if [ ! -b "$BOOT_FS_TARGET" ] || [ ! -b "$ROOTFS_TARGET" ] || [ ! -b "$SWAP_TARGET" ]; then
       log "Could not find the target partitions."
       return 2
     fi
     wt_gauge_update_status 40 "Creating root filesystem on $ROOTFS_TARGET..."
-    logged mkfs.ext4 "$ROOTFS_TARGET"  || return 5
-    logged mount -t ext4 "$ROOTFS_TARGET" "$TARGET_DIR" || return 6
+    logged "mkfs.$ROOTFS_TYPE" $ROOTFS_MK_OPTS "$ROOTFS_TARGET"  || return 5
+    logged mount -t "$ROOTFS_TYPE" "$ROOTFS_TARGET" "$TARGET_DIR" || return 6
     wt_gauge_update_status 60 "Creating boot filesystem on $BOOT_FS_TARGET..."
-    logged mkfs.fat -F32 "$BOOT_FS_TARGET" || return 3
+    logged "mkfs.$BOOT_FS_TYPE" "$BOOT_FS_MK_OPTS" "$BOOT_FS_TARGET" || return 3
     mkdir -p "$TARGET_DIR/boot"
-    logged mount -t vfat "$BOOT_FS_TARGET" "$TARGET_DIR/boot" || return 4
+    logged mount -t "$BOOT_FS_TYPE" "$BOOT_FS_TARGET" "$TARGET_DIR/boot" || return 4
     wt_gauge_update_status 80 "Creating swap on $SWAP_TARGET..."
     logged mkswap "$SWAP_TARGET" || return 7
   } | whiptail --gauge "Partitioning..." $WT_HEIGHT_SM $WT_WIDTH 0
-  if [ ! $? -eq 0 ]; then
+  RET=$?
+  if [ ! $RET -eq 0 ]; then
     wt_msg_error "code $RET"
     return 1
   fi
@@ -144,17 +162,42 @@ unpack_filesystem() {
   LD_PRELOAD="/usr/lib/isatty.so" unsquashfs -f -d "$TARGET_DIR" "$SOURCE_IMAGE_FILE" 2>>$LOG_FILE | \
     tr '\r' '\n' | \
     awk '$NF ~ /%$/{ print substr($NF, 1, length($NF)-1) }' | \
-    whiptail --gauge "Unpacking filesystem image to $TARGET_DISK..." $WT_HEIGHT_SM $WT_WIDTH 0
+    whiptail --gauge "Unpacking image to $TARGET_DISK..." $WT_HEIGHT_SM $WT_WIDTH 0
+  if [ ! $? -eq 0 ]; then
+    wt_msg_error "Failed to unpack image to $TARGET_DISK."
+    return 1
+  fi
+  wt_info "Synchorizing changes... This may take a while"
+  sync
+  return 0
 }
 
-post_installation() {
-  wt_info "Running post-installation script..."
-  log "Adding user..."
-  logged chroot "$TARGET_DIR" useradd -m -p "$USER_PASS_HASHED" "$USER_NAME"
+post_inst_add_user() {
+  log "Changing root password..."
+  echo "root:$ROOT_PASS" | logged chroot "$TARGET_DIR" chpasswd
   if [ ! $? -eq 0 ]; then
+    wt_msg_error "Failed to update root password."
+    return 1
+  fi
+  log "Adding user..."
+  logged chroot "$TARGET_DIR" useradd -m "$USER_NAME" -s "/bin/bash"
+  RET=$?
+  if [ $RET -eq 9 ]; then
+    log "User $USER_NAME already exists, skipping user creation"
+  elif [ ! $RET -eq 0 ]; then
     wt_msg_error "Failed to create the user account."
     return 1
   fi
+  log "Changing user $USER_NAME password..."
+  echo "$USER_NAME:$USER_PASS" | logged chroot "$TARGET_DIR" chpasswd
+  if [ ! $? -eq 0 ]; then
+    wt_msg_error "Failed to update $USER_NAME password."
+    return 1
+  fi
+  return 0
+}
+
+post_inst_configure_boot() {
   log "Configuring /etc/fstab..."
   ROOTFS_UUID=$(lsblk -no UUID "$ROOTFS_TARGET")
   BOOT_FS_UUID=$(lsblk -no UUID "$BOOT_FS_TARGET")
@@ -164,9 +207,24 @@ post_installation() {
     return 1
   fi
   FSTAB_FILE="$TARGET_DIR/etc/fstab"
-  echo "UUID=$ROOTFS_UUID	/ 	ext4 	errors=remount-ro 0 1" >> "$FSTAB_FILE"
-  echo "UUID=$BOOT_FS_UUID	/boot 	vfat 	defaults 0 1" >> "$FSTAB_FILE"
-  echo "UUID=$SWAP_UUID		none 	swap 	sw 0 0" >> "$FSTAB_FILE"
+  echo "# GENERATED BY LOONGSON SIMPLE INSTALLER" > "$FSTAB_FILE"
+  echo "UUID=$ROOTFS_UUID	/	$ROOTFS_TYPE	errors=remount-ro 0 1" >> "$FSTAB_FILE"
+  echo "UUID=$BOOT_FS_UUID	/boot	$BOOT_FS_TYPE	defaults 0 1" >> "$FSTAB_FILE"
+  echo "UUID=$SWAP_UUID		none	swap		sw 0 0" >> "$FSTAB_FILE"
+
+  log "Configuring PMON..."
+  BOOT_CFG_FILE="$TARGET_DIR/boot/boot.cfg"
+  sed -i "s/\$ROOT/UUID=$ROOTFS_UUID/g" "$BOOT_CFG_FILE"
+  if [ ! $? -eq 0 ]; then
+    wt_msg_error "Failed to configure PMON."
+    return 1
+  fi
+  return 0
+}
+
+post_installation() {
+  wt_info "Running post-installation script..."
+  post_inst_configure_boot && post_inst_add_user || return 1
 }
 
 umount_all() {
@@ -176,14 +234,14 @@ umount_all() {
   fi
 
   if [ ! "$TARGET_DISK" = "" ]; then
-    umount "$TARGET_DIR"
     umount "$TARGET_DIR/boot"
+    umount "$TARGET_DIR"
     TARGET_DISK=
   fi
 }
 
 do_install() {
-  trap umount_all EXIT SIGINT
+  trap umount_all EXIT
   detect_and_mount_installation_media && \
   verify_image && \
   choose_target && \
@@ -198,8 +256,8 @@ do_install() {
     fi
     return 1
   fi
-  wt_msg_info "Installation completed successfully. Press Ok to reboot."
   umount_all
+  wt_msg_info "Installation completed successfully. Remove the installation media and press Ok to reboot."
   do_reboot
 }
 
@@ -223,7 +281,6 @@ while true; do
                  "2 Shell" "Enter rescue shell" \
                  "3 Reboot" "Restart this machine" \
                  "4 Shutdown" "Power off this machine" \
-                 "5 Exit" "" \
                  3>&1 1>&2 2>&3)
   RET=$?
   if [ $RET -eq 0 ]; then
@@ -232,7 +289,6 @@ while true; do
       2\ *) do_shell ;;
       3\ *) do_reboot ;;
       4\ *) do_shutdown ;;
-      5\ *) exit 0 ;;
       *) wt_msg_error "Unrecognized option" ;;
     esac
   fi

@@ -1,4 +1,4 @@
-# Loongson Simple Installer
+# Simple Debian Installer for Loongson
 
 ## Files
 
@@ -8,7 +8,7 @@
 
 ## Prerequisites
 
-As root, 
+As root, run
 
 ```
 $ apt install whiptail parted squashfs-tools
@@ -22,7 +22,7 @@ $ ./build_installer_initrd.sh
 
 ## Building the installation media
 
-The installer expects 
+The installer expects
 
 * `filesystem.sqfs`: the squashfs image to be extracted by the installer. 
 * `filesystem.md5sum`: the md5sum of `filesystem.sqfs`, checked by the installer before installation.
@@ -38,7 +38,7 @@ $ qemu-img create -f qcow2 disk.qcow2 5G
 $ # copy/move your installation media to `./media.img`
 $ ./boot.sh
 ```
+
 ## TODO and BUGS
 
-* Incomplete (and untested) post-installation procedure.
 * Lock the target hard disk before partitioning / formatting.

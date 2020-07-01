@@ -23,19 +23,31 @@ check_file_or_fail()
   fi
 }
 
-EXEC_DEPS="/usr/bin/whiptail /usr/bin/unsquashfs /usr/sbin/parted /usr/bin/lsblk /usr/sbin/dmidecode /usr/sbin/mkfs.fat /usr/sbin/mkfs.ext4"
+EXEC_DEPS="whiptail unsquashfs parted lsblk mkfs.vfat mkfs.ext4 mkfs.ext3 mkfs.ext2"
 
 for exec in $EXEC_DEPS; do
-  check_file_or_fail "$exec"
-  copy_exec "$exec" $(dirname "$exec")
+  EXEC_PATH=$(which "$exec")
+  if [ ! $? -eq 0 ]; then
+    echo "Error: unable to find executable $exec"
+    exit 1
+  fi
+  copy_exec "$EXEC_PATH" $(dirname "$EXEC_PATH")
 done
 
-FILE_DEPS="/usr/share/initramfs-tools/installer/main"
+INSTALLER_FILES="/usr/share/initramfs-tools/installer/main"
 
 mkdir "$DESTDIR/installer"
-for file in $FILE_DEPS; do
+for file in $INSTALLER_FILES; do
   check_file_or_fail "$file"
   cp -f "$file" "$DESTDIR/installer"
+done
+
+MISC_FILES="/usr/share/terminfo/x/xterm+256color"
+
+for file in $MISC_FILES; do
+  check_file_or_fail "$file"
+  mkdir -p "$DESTDIR/$(dirname $file)"
+  cp -f "$file" "$DESTDIR/$file"
 done
 
 manual_add_modules vfat nls_cp437 nls_ascii

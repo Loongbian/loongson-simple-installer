@@ -1,4 +1,11 @@
-#!/bin/sh
+#!/bin/bash
+
+## Simple Debian Installer
+## Copyright (C) 2020 Peter Zhang <mbyzhang@outlook.com>
+##
+## This program comes with ABSOLUTELY NO WARRANTY; for details see COPYING.
+## This is free software, and you are welcome to redistribute it
+## under certain conditions; see COPYING for details.
 
 ORIG_CONF_DIR=/usr/share/initramfs-tools
 MASK_CONF_DIR=conf
@@ -18,13 +25,18 @@ check_directory_or_fail()
   fi
 }
 
+if [ $EUID -ne 0 ]; then
+   echo "Error: This script must be run as root" 
+   exit 1
+fi
+
 check_directory_or_fail $MASK_CONF_DIR
 check_directory_or_fail $DUMMY_CONF_DIR
 
 trap cleanup EXIT INT TERM
 mount -t overlay overlay -o lowerdir=$MASK_CONF_DIR:$ORIG_CONF_DIR $ORIG_CONF_DIR
 
-if [ ! $? -eq 0 ]; then
+if [ $? -ne 0 ]; then
   echo "Error: Failed to create merged configuration directory. Is overlayfs support enabled?"
   exit 1
 fi
