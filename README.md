@@ -11,13 +11,13 @@
 As root, run
 
 ```
-$ apt install whiptail parted squashfs-tools
+$ apt install whiptail parted squashfs-tools gcc
 ```
 
 ## Building `installer.img`
 
 ```
-$ ./build_installer_initrd.sh
+$ ./build.sh
 ```
 
 ## Building the installation media
