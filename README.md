@@ -11,7 +11,7 @@
 As root, run
 
 ```
-$ apt install whiptail parted squashfs-tools gcc
+$ apt install whiptail parted squashfs-tools dosfstools gcc
 ```
 
 ## Building `installer.img`

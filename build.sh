@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 ## Simple Debian Installer
 ## Copyright (C) 2020 Peter Zhang <mbyzhang@outlook.com>
@@ -32,6 +32,8 @@ if [ $EUID -ne 0 ]; then
    exit 1
 fi
 
+cd $(dirname $0)
+
 cat << EOF > "$DUMMY_CONF_DIR/initramfs.conf"
 MODULES=most
 BUSYBOX=y
@@ -57,4 +59,4 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Building $OUTPUT_FILE"
-mkinitramfs -d $DUMMY_CONF_DIR -o $OUTPUT_FILE
+mkinitramfs -d $DUMMY_CONF_DIR -o $OUTPUT_FILE $INSTALLER_MKINITRAMFS_KERNEL_VERSION

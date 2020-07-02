@@ -42,7 +42,7 @@ for file in $INSTALLER_FILES; do
   cp -f "$file" "$DESTDIR/installer"
 done
 
-MISC_FILES="/usr/share/terminfo/x/xterm+256color"
+MISC_FILES="/usr/lib/terminfo/l/linux"
 
 for file in $MISC_FILES; do
   check_file_or_fail "$file"

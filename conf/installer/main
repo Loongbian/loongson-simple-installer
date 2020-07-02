@@ -90,9 +90,8 @@ detect_and_mount_installation_media() {
 
 verify_image() {
   wt_info "Checking integrity of the installation image..."
-  MD5SUM=$(cd $(dirname "$SOURCE_IMAGE_FILE") && md5sum $(basename "$SOURCE_IMAGE_FILE"))
-  if ! echo "$MD5SUM" | diff "$SOURCE_IMAGE_MD5SUM_FILE" - ; then
-    wt_msg_error "Invalid checksum. Expected $(cat $SOURCE_IMAGE_MD5SUM_FILE), but got $MD5SUM"
+  if ! (cd "$SOURCE_DIR" && md5sum -c -s "$SOURCE_IMAGE_MD5SUM_FILE"); then
+    wt_msg_error "Invalid checksum. Is your installaion media corrupt?"
     return 1
   fi
   log "Integrity check passed."
