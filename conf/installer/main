@@ -1,6 +1,6 @@
 #!/bin/sh
 
-## Simple Debian Installer
+## Simple Debian Installer for Loongson Pi Edu
 ## Copyright (C) 2020 Peter Zhang <mbyzhang@outlook.com>
 ##
 ## This program comes with ABSOLUTELY NO WARRANTY; for details see COPYING.
@@ -213,10 +213,34 @@ post_inst_configure_boot() {
   echo "UUID=$SWAP_UUID		none	swap		sw 0 0" >> "$FSTAB_FILE"
 
   log "Configuring PMON..."
-  BOOT_CFG_FILE="$TARGET_DIR/boot/boot.cfg"
-  sed -i "s/\$ROOT/UUID=$ROOTFS_UUID/g" "$BOOT_CFG_FILE"
+  if logged chroot "$TARGET_DIR" which pmon-update; then
+    log "Found pmon-update, running"
+    logged chroot "$TARGET_DIR" pmon-update
+    if [ ! $? -eq 0 ]; then
+      wt_msg_error "pmon-update failed."
+      return 1
+    fi
+  else
+    log 'Could not find pmon-update, trying $ROOT substitution'
+    BOOT_CFG_FILE="$TARGET_DIR/boot/boot.cfg"
+    logged sed -i "s/\$ROOT/UUID=$ROOTFS_UUID/g" "$BOOT_CFG_FILE"
+    if [ ! $? -eq 0 ]; then
+      wt_msg_error "Failed to configure PMON."
+      return 1
+    fi
+  fi
+  return 0
+}
+
+post_inst_regenerate_sshd_keys() {
+  log "Regenerating SSH server keys..."
+  if ! logged chroot "$TARGET_DIR" which sshd; then
+    log "SSH server not found, skipping key generation..."
+    return 0
+  fi
+  logged chroot "$TARGET_DIR" dpkg-reconfigure openssh-server
   if [ ! $? -eq 0 ]; then
-    wt_msg_error "Failed to configure PMON."
+    wt_msg_error "Failed to regenerate SSH server keys."
     return 1
   fi
   return 0
@@ -224,7 +248,7 @@ post_inst_configure_boot() {
 
 post_installation() {
   wt_info "Running post-installation script..."
-  post_inst_configure_boot && post_inst_add_user || return 1
+  post_inst_configure_boot && post_inst_add_user && post_inst_regenerate_sshd_keys || return 1
 }
 
 umount_all() {
@@ -241,6 +265,10 @@ umount_all() {
 }
 
 do_install() {
+  if [ -f "$LOG_FILE" ]; then
+    mv -f "$LOG_FILE" "$LOG_FILE~"
+  fi
+
   trap umount_all EXIT
   detect_and_mount_installation_media && \
   verify_image && \
@@ -291,5 +319,7 @@ while true; do
       4\ *) do_shutdown ;;
       *) wt_msg_error "Unrecognized option" ;;
     esac
+  else
+    exit 0  
   fi
 done

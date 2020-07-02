@@ -1,2 +1,3 @@
-#!/bin/sh -e
+#!/bin/sh
+# This script is used to disable (by masking) hooks that are not needed for building the installer.
 exit 0

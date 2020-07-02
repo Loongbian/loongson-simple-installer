@@ -9,12 +9,14 @@
 
 ORIG_CONF_DIR=/usr/share/initramfs-tools
 MASK_CONF_DIR=conf
-DUMMY_CONF_DIR=dummy-conf
 OUTPUT_FILE=installer.img
+
+DUMMY_CONF_DIR="$(mktemp -d)"
 
 cleanup()
 {
-  umount -q $ORIG_CONF_DIR
+  rm -rf "$DUMMY_CONF_DIR"
+  umount -q "$ORIG_CONF_DIR"
 }
 
 check_directory_or_fail()
@@ -29,6 +31,19 @@ if [ $EUID -ne 0 ]; then
    echo "Error: This script must be run as root" 
    exit 1
 fi
+
+cat << EOF > "$DUMMY_CONF_DIR/initramfs.conf"
+MODULES=most
+BUSYBOX=y
+KEYMAP=n
+COMPRESS=gzip
+DEVICE=
+NFSROOT=auto
+RUNSIZE=10%
+EOF
+
+touch "$DUMMY_CONF_DIR/modules"
+mkdir "$DUMMY_CONF_DIR/"{conf.d,hook,scripts}
 
 check_directory_or_fail $MASK_CONF_DIR
 check_directory_or_fail $DUMMY_CONF_DIR

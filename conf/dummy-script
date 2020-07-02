@@ -1,2 +1,3 @@
 #!/bin/sh
+# This script is used to disable (by masking) scripts that are not needed for the installer.
 exit 0
