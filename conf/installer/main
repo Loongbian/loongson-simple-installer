@@ -30,6 +30,8 @@ WT_HEIGHT_SM=10
 WT_WIDTH=60
 WT_MENU_HEIGHT=10
 
+export NEWT_COLORS="root=white,black"
+
 set -o pipefail
 
 logged() {
