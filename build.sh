@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 
 ## Simple Debian Installer
 ## Copyright (C) 2020 Peter Zhang <mbyzhang@outlook.com>
@@ -10,8 +10,14 @@
 ORIG_CONF_DIR=/usr/share/initramfs-tools
 MASK_CONF_DIR=conf
 OUTPUT_FILE=installer.img
-
 DUMMY_CONF_DIR="$(mktemp -d)"
+
+KERNEL_VERSION="$INSTALLER_MKINITRAMFS_KERNEL_VERSION"
+
+if [ "$1" != "" ]; then
+  KERNEL_VERSION="$1"
+fi
+
 
 cleanup()
 {
@@ -47,11 +53,11 @@ EOF
 touch "$DUMMY_CONF_DIR/modules"
 mkdir "$DUMMY_CONF_DIR/"{conf.d,hook,scripts}
 
-check_directory_or_fail $MASK_CONF_DIR
-check_directory_or_fail $DUMMY_CONF_DIR
+check_directory_or_fail "$MASK_CONF_DIR"
+check_directory_or_fail "$DUMMY_CONF_DIR"
 
 trap cleanup EXIT INT TERM
-mount -t overlay overlay -o lowerdir=$MASK_CONF_DIR:$ORIG_CONF_DIR $ORIG_CONF_DIR
+mount -t overlay overlay -o "lowerdir=$MASK_CONF_DIR:$ORIG_CONF_DIR" "$ORIG_CONF_DIR"
 
 if [ $? -ne 0 ]; then
   echo "Error: Failed to create merged configuration directory. Is overlayfs support enabled?"
@@ -59,4 +65,4 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Building $OUTPUT_FILE"
-mkinitramfs -d $DUMMY_CONF_DIR -o $OUTPUT_FILE $INSTALLER_MKINITRAMFS_KERNEL_VERSION
+mkinitramfs -d "$DUMMY_CONF_DIR" -o "$OUTPUT_FILE" "$KERNEL_VERSION"

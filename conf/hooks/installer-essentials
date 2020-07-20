@@ -50,7 +50,7 @@ for file in $MISC_FILES; do
   cp -f "$file" "$DESTDIR/$file"
 done
 
-manual_add_modules vfat nls_cp437 nls_ascii
+manual_add_modules vfat nls_cp437 nls_ascii isofs
 
 ISATTY_LIB_TARGET=$(mktemp)
 echo "int isatty(int fd) { return 1; }" | gcc -O2 -fpic -shared -ldl -o "$ISATTY_LIB_TARGET" -xc - && copy_exec "$ISATTY_LIB_TARGET" /usr/lib/isatty.so

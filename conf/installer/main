@@ -68,12 +68,12 @@ detect_and_mount_installation_media() {
   mkdir -p "$SOURCE_DIR"
   mkdir -p "$TARGET_DIR"
   wt_info "Detecting installation media..."
-  CANDIDATES=$(lsblk -prno NAME,FSTYPE,MOUNTPOINT | awk -F '\ ' '$2=="vfat" && $3=="" {print $1}')
+  CANDIDATES=$(lsblk -prno NAME,FSTYPE,MOUNTPOINT | awk -F '\ ' '($2=="vfat" || $2=="iso9660") && $3=="" {print $1}')
   log "Available disks:"
   log "$CANDIDATES"
   for disk in $CANDIDATES; do
     log "Trying to mount $disk..."
-    mount -t vfat -o ro $disk $SOURCE_DIR
+    mount -o ro $disk $SOURCE_DIR
     if [ ! $? -eq 0 ]; then
       continue
     fi
@@ -222,13 +222,7 @@ post_inst_configure_boot() {
       return 1
     fi
   else
-    log 'Could not find pmon-update, trying $ROOT substitution'
-    BOOT_CFG_FILE="$TARGET_DIR/boot/boot.cfg"
-    logged sed -i "s/\$ROOT/UUID=$ROOTFS_UUID/g" "$BOOT_CFG_FILE"
-    if [ ! $? -eq 0 ]; then
-      wt_msg_error "Failed to configure PMON."
-      return 1
-    fi
+    log 'Could not find pmon-update, skipping PMON configuration.'
   fi
   return 0
 }
