@@ -241,9 +241,22 @@ post_inst_regenerate_sshd_keys() {
   return 0
 }
 
+post_inst_setup_machine_id() {
+  if ! logged chroot "$TARGET_DIR" which systemd-machine-id-setup; then
+    log "systemd-machine-id-setup not found, skipping machine-id generation..."
+    return 0
+  fi
+  logged chroot "$TARGET_DIR" systemd-machine-id-setup
+  if [ ! $? -eq 0 ]; then
+    wt_msg_error "Failed to setup machine-id."
+    return 1
+  fi
+  return 0
+}
+
 post_installation() {
   wt_info "Running post-installation script..."
-  post_inst_configure_boot && post_inst_add_user && post_inst_regenerate_sshd_keys || return 1
+  post_inst_configure_boot && post_inst_add_user && post_inst_regenerate_sshd_keys && post_inst_setup_machine_id || return 1
 }
 
 umount_all() {
@@ -315,6 +328,6 @@ while true; do
       *) wt_msg_error "Unrecognized option" ;;
     esac
   else
-    exit 0  
+    exit 0
   fi
 done

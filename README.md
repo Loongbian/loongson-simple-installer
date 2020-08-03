@@ -37,10 +37,7 @@ to be present in a FAT32 filesystem on the target machine.
 ```
 $ cd qemu
 $ qemu-img create -f qcow2 disk.qcow2 5G
-$ # copy/move your installation media to `./media.img`
-$ ./boot.sh
+$ # modify boot-installer.sh to suit your needs
+$ ./boot-installer.sh
 ```
 
-## TODO and BUGS
-
-* Lock the target hard disk before partitioning / formatting.
