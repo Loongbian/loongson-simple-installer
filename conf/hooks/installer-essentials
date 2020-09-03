@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -e
+
 PREREQ=""
 prereqs()
 {
@@ -52,8 +54,20 @@ done
 
 manual_add_modules vfat nls_cp437 nls_ascii isofs
 
-ISATTY_LIB_TARGET=$(mktemp)
-echo "int isatty(int fd) { return 1; }" | gcc -O2 -fpic -shared -ldl -o "$ISATTY_LIB_TARGET" -xc - && copy_exec "$ISATTY_LIB_TARGET" /usr/lib/isatty.so
-rm -f "$ISATTY_LIB_TARGET"
+ISATTY_LIB_PRECOMPILED="/usr/share/initramfs-tools/lib/isatty.$(uname -m).so"
+ISATTY_LIB_TARGET=
+
+if [ -f "$ISATTY_LIB_PRECOMPILED" ]; then
+  echo "Found precompiled binary of isatty.so"
+  ISATTY_LIB_TARGET="$ISATTY_LIB_PRECOMPILED"
+else
+  echo "Precompiled binary of isatty.so not found, compiling..."
+  ISATTY_LIB_TARGET="$(mktemp)"
+  echo "int isatty(int fd) { return 1; }" | gcc -O2 -fpic -shared -ldl -o "$ISATTY_LIB_TARGET" -xc -
+fi
+
+copy_exec "$ISATTY_LIB_TARGET" /usr/lib/isatty.so
+
+#rm -f "$ISATTY_LIB_TARGET"
 
 exit 0
