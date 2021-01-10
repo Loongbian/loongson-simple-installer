@@ -1,0 +1,3 @@
+# Default installation configuration
+CONFIG_BOOTLOADER=pmon
+CONFIG_GRUB_TARGET=mips64el-efi

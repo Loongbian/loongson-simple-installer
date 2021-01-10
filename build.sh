@@ -11,17 +11,22 @@ ORIG_CONF_DIR=/usr/share/initramfs-tools
 MASK_CONF_DIR=conf
 OUTPUT_FILE=installer.img
 DUMMY_CONF_DIR="$(mktemp -d)"
+INST_CONF_OVERLAY_DIR="$(mktemp -d)"
 
-KERNEL_VERSION="$INSTALLER_MKINITRAMFS_KERNEL_VERSION"
+KERNEL_VERSION="${INSTALLER_MKINITRAMFS_KERNEL_VERSION:-auto}"
+BOOTLOADER="${INSTALLER_BOOTLOADER:-pmon}"
+GRUB_TARGET="${INSTALLER_GRUB_TARGET:-mips64el-efi}"
+
+trap cleanup EXIT INT TERM
 
 if [ "$1" != "" ]; then
   KERNEL_VERSION="$1"
 fi
 
-
 cleanup()
 {
   rm -rf "$DUMMY_CONF_DIR"
+  rm -rf "$INST_CONF_OVERLAY_DIR"
   umount -q "$ORIG_CONF_DIR"
 }
 
@@ -34,7 +39,7 @@ check_directory_or_fail()
 }
 
 if [ $EUID -ne 0 ]; then
-   echo "Error: This script must be run as root" 
+   echo "Error: This script must be run as root"
    exit 1
 fi
 
@@ -55,9 +60,15 @@ mkdir "$DUMMY_CONF_DIR/"{conf.d,hook,scripts}
 
 check_directory_or_fail "$MASK_CONF_DIR"
 check_directory_or_fail "$DUMMY_CONF_DIR"
+check_directory_or_fail "$INST_CONF_OVERLAY_DIR"
 
-trap cleanup EXIT INT TERM
-mount -t overlay overlay -o "lowerdir=$MASK_CONF_DIR:$ORIG_CONF_DIR" "$ORIG_CONF_DIR"
+mkdir -p "$INST_CONF_OVERLAY_DIR/installer"
+cat << EOF > "$INST_CONF_OVERLAY_DIR/installer/config"
+CONFIG_BOOTLOADER=$BOOTLOADER
+CONFIG_GRUB_TARGET=$GRUB_TARGET
+EOF
+
+mount -t overlay overlay -o "lowerdir=$INST_CONF_OVERLAY_DIR:$MASK_CONF_DIR:$ORIG_CONF_DIR" "$ORIG_CONF_DIR"
 
 if [ $? -ne 0 ]; then
   echo "Error: Failed to create merged configuration directory. Is overlayfs support enabled?"

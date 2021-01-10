@@ -17,7 +17,11 @@ esac
 
 log_begin_msg "Starting Installer"
 
-modprobe isofs vfat nls_cp437 nls_ascii ext4
+modprobe isofs
+modprobe vfat
+modprobe nls_cp437
+modprobe nls_ascii
+modprobe ext4
 
 export TERM=linux
 cd /installer

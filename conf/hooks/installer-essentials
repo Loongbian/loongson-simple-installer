@@ -25,7 +25,7 @@ check_file_or_fail()
   fi
 }
 
-EXEC_DEPS="whiptail unsquashfs parted lsblk mkfs.vfat mkfs.ext4 mkfs.ext3 mkfs.ext2"
+EXEC_DEPS="whiptail unsquashfs parted lsblk mkfs.vfat mkfs.ext4 mkfs.ext3 mkfs.ext2" # dmidecode
 
 for exec in $EXEC_DEPS; do
   EXEC_PATH=$(which "$exec")
@@ -36,12 +36,13 @@ for exec in $EXEC_DEPS; do
   copy_exec "$EXEC_PATH" $(dirname "$EXEC_PATH")
 done
 
-INSTALLER_FILES="/usr/share/initramfs-tools/installer/main"
+INSTALLER_PREFIX="/usr/share/initramfs-tools/installer"
+INSTALLER_FILES="main config"
 
 mkdir "$DESTDIR/installer"
 for file in $INSTALLER_FILES; do
-  check_file_or_fail "$file"
-  cp -f "$file" "$DESTDIR/installer"
+  check_file_or_fail "$INSTALLER_PREFIX/$file"
+  cp -f "$INSTALLER_PREFIX/$file" "$DESTDIR/installer"
 done
 
 MISC_FILES="/usr/lib/terminfo/l/linux"
