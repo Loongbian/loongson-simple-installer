@@ -1,6 +1,6 @@
 # Simple Debian Installer for Loongson
 
-![Welcome](loongson-simple-installer-welcome.png)
+![Welcome](https://raw.githubusercontent.com/Loongbian/static/main/loongson-simple-installer-welcome.png)
 
 ## Files
 
